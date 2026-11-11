@@ -310,3 +310,25 @@ fn utf8_text_aligns_by_characters() {
     assert!(output.status.success());
     assert_eq!(stdout(&output), "-a café b\n+a cafe b\n");
 }
+
+#[test]
+fn forced_color_colors_output_and_plain_flag_disables_it() {
+    let sandbox = Sandbox::new("color");
+    let patch_file = sandbox.file("x.patch", PATCH);
+    let colored_output = Command::new(bin())
+        .arg(&patch_file)
+        .arg("--display-only")
+        .env("CLICOLOR_FORCE", "1")
+        .env("PATH", sandbox.empty_bin_directory())
+        .output()
+        .unwrap();
+    let plain_output = Command::new(bin())
+        .arg(&patch_file)
+        .args(["--display-only", "--plain"])
+        .env("CLICOLOR_FORCE", "1")
+        .env("PATH", sandbox.empty_bin_directory())
+        .output()
+        .unwrap();
+    assert!(stdout(&colored_output).contains("\x1b["));
+    assert!(!stdout(&plain_output).contains("\x1b["));
+}

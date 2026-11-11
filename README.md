@@ -94,6 +94,10 @@ git diff | bodge -      same, from stdin
 Output is printed and also copied to the clipboard with `pbcopy`. 
 Pass `--display-only` to skip the clipboard.
 
+Output is colored like a diff when printed to a terminal (tabs and trailing
+whitespace are highlighted). Pass `--plain` to disable color; `NO_COLOR` is
+also honored.
+
 ## Build
 
 ```
