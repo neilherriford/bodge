@@ -3,7 +3,7 @@ Convert a patch for plain text prose to something more human readable.
 
 I write most of my prose in version controlled markdown, and I use
 LLMs to help with minor edits, like grammar, active voice, and 
-consistences, never content wholesale.  I take suggestions under 
+consistency, never content wholesale.  I take suggestions under 
 advisement, not as mandate.
 
 I've found that a good workflow is to have an LLM read my material,
