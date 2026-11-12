@@ -92,11 +92,46 @@ git diff | bodge -      same, from stdin
 ```
 
 Output is printed and also copied to the clipboard with `pbcopy`. 
-Pass `--display-only` to skip the clipboard.
 
-Output is colored like a diff when printed to a terminal (tabs and trailing
-whitespace are highlighted). Pass `--plain` to disable color; `NO_COLOR` is
-also honored.
+## Arguments
+
+`--display-only`
+Strip the clipboard
+
+`--context [CHARACTERS]`
+Shows up to `CHARACTERS` number of similar characters around the diff
+to keep, the rest are elided with an ellipsis.  Example at 15 chars:
+
+```diff
+--- a/sample.markdown
++++ b/sample.markdown
+@@ -1,20 +1,20 @@
+-CHAPTER I.
++CHAPTER I, DUDE.
+-==========
++================
+-The Period
++The Vibe
+-----------
++--------
+-It was the best         of times, it was the worst      of times, it w…
++It was the most tubular of times, it was the most bogus of times, it w…
+-wisdom,      it was the age of       foolishness, i…
++wisdom, bro, it was the age of total foolishness, i…
+-…s the epoch of incredulity,  it was the sea…
++…s the epoch of like, no way, it was the sea…
+-short,       the period was…
++short, dude, the period was…
+-…omparison only.
++…omparison only. Gnarly.
+-…hrone of France.          In both countr…
++…hrone of France, totally. In both countr…
+-…ettled for ever.
++…ettled for ever, like, forever.
+```
+
+`--plain`
+Do not display in color.  The env. variable `NO_COLOR` is also honored.
 
 ## Build
 

@@ -1,4 +1,5 @@
 mod align;
+mod context;
 mod diff;
 mod patch;
 
@@ -26,6 +27,15 @@ struct Cli {
 
     #[arg(long, help = "Do not colorize the output")]
     plain: bool,
+
+    #[arg(
+        long,
+        value_name = "CHARACTERS",
+        num_args = 0..=1,
+        value_parser = clap::value_parser!(u64).range(context::MINIMUM_CONTEXT_CHARACTERS..),
+        help = "Omit unchanged text farther than CHARACTERS (min 5, default 15) from each change"
+    )]
+    context: Option<Option<u64>>,
 
     #[arg(
         value_name = "FILE",
@@ -143,11 +153,16 @@ fn copy_to_clipboard(text: &str) -> std::io::Result<()> {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
-    let output = match cli.files.as_slice() {
+    let mut output = match cli.files.as_slice() {
         [patch_file] => patch::convert(&read_input(patch_file)?),
         [old_file, new_file] => compare(&read_input(old_file)?, &read_input(new_file)?),
         _ => unreachable!("clap enforces one or two files"),
     };
+
+    if let Some(requested_context) = cli.context {
+        let context_characters = requested_context.unwrap_or(context::DEFAULT_CONTEXT_CHARACTERS);
+        output = context::trim_context(&output, context_characters);
+    }
 
     let color_forced = std::env::var_os("CLICOLOR_FORCE").is_some_and(|value| value != "0");
     let wants_color = wants_color(cli.plain, std::io::stdout().is_terminal(), color_forced);
@@ -218,6 +233,43 @@ mod tests {
         assert!(!wants_color(true, true, false));
         assert!(!wants_color(true, true, true));
         assert!(!wants_color(true, false, true));
+    }
+
+    #[test]
+    fn context_defaults_to_off() {
+        assert_eq!(Cli::try_parse_from(["bodge", "a"]).unwrap().context, None);
+    }
+
+    #[test]
+    fn bare_context_flag_uses_the_default_of_fifteen() {
+        let cli = Cli::try_parse_from(["bodge", "a", "--context"]).unwrap();
+        assert_eq!(cli.context, Some(None));
+        assert_eq!(cli.files, vec!["a"]);
+    }
+
+    #[test]
+    fn context_flag_takes_a_number() {
+        let spaced = Cli::try_parse_from(["bodge", "--context", "20", "a"]).unwrap();
+        let joined = Cli::try_parse_from(["bodge", "--context=20", "a"]).unwrap();
+        assert_eq!(spaced.context, Some(Some(20)));
+        assert_eq!(joined.context, Some(Some(20)));
+    }
+
+    #[test]
+    fn context_flag_accepts_the_minimum_of_five() {
+        let cli = Cli::try_parse_from(["bodge", "--context", "5", "a"]).unwrap();
+        assert_eq!(cli.context, Some(Some(5)));
+    }
+
+    #[test]
+    fn context_flag_rejects_values_below_five() {
+        assert!(Cli::try_parse_from(["bodge", "--context", "4", "a"]).is_err());
+        assert!(Cli::try_parse_from(["bodge", "--context", "0", "a"]).is_err());
+    }
+
+    #[test]
+    fn context_flag_rejects_non_numbers() {
+        assert!(Cli::try_parse_from(["bodge", "--context=lots", "a"]).is_err());
     }
 
     #[test]

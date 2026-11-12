@@ -332,3 +332,53 @@ fn forced_color_colors_output_and_plain_flag_disables_it() {
     assert!(stdout(&colored_output).contains("\x1b["));
     assert!(!stdout(&plain_output).contains("\x1b["));
 }
+
+#[test]
+fn context_flag_omits_long_unchanged_context() {
+    let sandbox = Sandbox::new("context");
+    let old_file = sandbox.file("a.txt", "aaaaaaaaaaaaaaaaaaaa old bbbbbbbbbbbbbbbbbbbb\n");
+    let new_file = sandbox.file("b.txt", "aaaaaaaaaaaaaaaaaaaa new bbbbbbbbbbbbbbbbbbbb\n");
+    let default_context = run(
+        &[
+            &old_file,
+            &new_file,
+            Path::new("--display-only"),
+            Path::new("--context"),
+        ],
+        &sandbox.empty_bin_directory(),
+    );
+    assert!(
+        default_context.status.success(),
+        "{}",
+        stderr(&default_context)
+    );
+    assert_eq!(
+        stdout(&default_context),
+        "-…aaaaaaaaaaaaaa old bbbbbbbbbbbbbb…\n+…aaaaaaaaaaaaaa new bbbbbbbbbbbbbb…\n"
+    );
+    let custom_context = run(
+        &[
+            &old_file,
+            &new_file,
+            Path::new("--display-only"),
+            Path::new("--context=5"),
+        ],
+        &sandbox.empty_bin_directory(),
+    );
+    assert_eq!(
+        stdout(&custom_context),
+        "-…aaaa old bbbb…\n+…aaaa new bbbb…\n"
+    );
+    let without_flag = run(
+        &[&old_file, &new_file, Path::new("--display-only")],
+        &sandbox.empty_bin_directory(),
+    );
+    assert!(!stdout(&without_flag).contains('…'));
+}
+
+#[test]
+fn context_flag_below_minimum_is_a_usage_error() {
+    let sandbox = Sandbox::new("context-minimum");
+    let output = run_str(&["--context=4", "a"], &sandbox.empty_bin_directory());
+    assert!(!output.status.success());
+}
