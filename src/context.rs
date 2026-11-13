@@ -10,6 +10,14 @@ fn is_addition(line: &str) -> bool {
     line.starts_with('+') && !line.starts_with("+++ ")
 }
 
+const MAXIMUM_TABLE_CELLS: usize = 4_000_000;
+
+struct CommonRun {
+    removed_start: usize,
+    added_start: usize,
+    length: usize,
+}
+
 fn common_prefix_length(first: &[char], second: &[char]) -> usize {
     first
         .iter()
@@ -18,63 +26,183 @@ fn common_prefix_length(first: &[char], second: &[char]) -> usize {
         .count()
 }
 
-fn common_suffix_length(first: &[char], second: &[char], prefix_length: usize) -> usize {
-    let available = first.len().min(second.len()) - prefix_length;
-
+fn common_suffix_length(first: &[char], second: &[char]) -> usize {
     first
         .iter()
         .rev()
         .zip(second.iter().rev())
-        .take(available)
         .take_while(|(first_character, second_character)| first_character == second_character)
         .count()
 }
 
-fn shorten(
-    characters: &[char],
-    prefix_length: usize,
-    suffix_length: usize,
+fn matched_middle_pairs(removed: &[char], added: &[char]) -> Vec<(usize, usize)> {
+    let removed_length = removed.len();
+    let added_length = added.len();
+    let row_width = added_length + 1;
+
+    if removed_length * added_length > MAXIMUM_TABLE_CELLS {
+        return Vec::new();
+    }
+
+    let mut longest_common = vec![0u32; (removed_length + 1) * row_width];
+
+    for removed_index in (0..removed_length).rev() {
+        for added_index in (0..added_length).rev() {
+            longest_common[removed_index * row_width + added_index] =
+                if removed[removed_index] == added[added_index] {
+                    longest_common[(removed_index + 1) * row_width + added_index + 1] + 1
+                } else {
+                    longest_common[(removed_index + 1) * row_width + added_index]
+                        .max(longest_common[removed_index * row_width + added_index + 1])
+                };
+        }
+    }
+
+    let mut result = Vec::new();
+    let mut removed_index = 0;
+    let mut added_index = 0;
+
+    while removed_index < removed_length && added_index < added_length {
+        if removed[removed_index] == added[added_index] {
+            result.push((removed_index, added_index));
+            removed_index += 1;
+            added_index += 1;
+        } else if longest_common[(removed_index + 1) * row_width + added_index]
+            >= longest_common[removed_index * row_width + added_index + 1]
+        {
+            removed_index += 1;
+        } else {
+            added_index += 1;
+        }
+    }
+    result
+}
+
+fn common_runs(removed: &[char], added: &[char]) -> Vec<CommonRun> {
+    let prefix_length = common_prefix_length(removed, added);
+    let suffix_length = common_suffix_length(&removed[prefix_length..], &added[prefix_length..]);
+    let middle_removed = &removed[prefix_length..removed.len() - suffix_length];
+    let middle_added = &added[prefix_length..added.len() - suffix_length];
+
+    let mut pairs: Vec<(usize, usize)> = (0..prefix_length).map(|index| (index, index)).collect();
+
+    pairs.extend(
+        matched_middle_pairs(middle_removed, middle_added)
+            .into_iter()
+            .map(|(removed_index, added_index)| {
+                (removed_index + prefix_length, added_index + prefix_length)
+            }),
+    );
+
+    pairs.extend((0..suffix_length).map(|offset| {
+        (
+            removed.len() - suffix_length + offset,
+            added.len() - suffix_length + offset,
+        )
+    }));
+
+    let mut result: Vec<CommonRun> = Vec::new();
+
+    for (removed_index, added_index) in pairs {
+        match result.last_mut() {
+            Some(run)
+                if run.removed_start + run.length == removed_index
+                    && run.added_start + run.length == added_index =>
+            {
+                run.length += 1;
+            }
+            _ => result.push(CommonRun {
+                removed_start: removed_index,
+                added_start: added_index,
+                length: 1,
+            }),
+        }
+    }
+    result
+}
+
+fn shorten_common_text(
+    text: &[char],
+    is_leading: bool,
+    is_trailing: bool,
     context_characters: usize,
 ) -> String {
-    let start = prefix_length.saturating_sub(context_characters);
-    let trimmed_suffix = suffix_length.saturating_sub(context_characters);
-    let end = characters.len() - trimmed_suffix;
     let mut result = String::new();
+    let length = text.len();
 
-    if start > 0 {
+    if is_leading && length > context_characters {
         result.push(ELLIPSIS);
+        result.extend(&text[length - context_characters..]);
+    } else if is_trailing && length > context_characters {
+        result.extend(&text[..context_characters]);
+        result.push(ELLIPSIS);
+    } else if !is_leading && !is_trailing && length > 2 * context_characters {
+        result.extend(&text[..context_characters]);
+        result.push(ELLIPSIS);
+        result.extend(&text[length - context_characters..]);
+    } else {
+        result.extend(text);
     }
 
-    result.extend(&characters[start..end]);
-    if trimmed_suffix > 0 {
-        result.push(ELLIPSIS);
+    result
+}
+
+fn render_line(
+    characters: &[char],
+    other_characters: &[char],
+    runs: &[CommonRun],
+    is_removed_side: bool,
+    context_characters: usize,
+) -> String {
+    let mut result = String::new();
+    let mut position = 0;
+
+    for run in runs {
+        let (start, other_start) = if is_removed_side {
+            (run.removed_start, run.added_start)
+        } else {
+            (run.added_start, run.removed_start)
+        };
+        result.extend(&characters[position..start]);
+        let is_leading = start == 0 && other_start == 0;
+        let is_trailing = start + run.length == characters.len()
+            && other_start + run.length == other_characters.len();
+        result.push_str(&shorten_common_text(
+            &characters[start..start + run.length],
+            is_leading,
+            is_trailing,
+            context_characters,
+        ));
+        position = start + run.length;
     }
 
+    result.extend(&characters[position..]);
     result
 }
 
 fn trim_pair(removed: &str, added: &str, context_characters: usize) -> (String, String) {
     let removed_characters: Vec<char> = removed[1..].chars().collect();
     let added_characters: Vec<char> = added[1..].chars().collect();
-    let prefix_length = common_prefix_length(&removed_characters, &added_characters);
-    let suffix_length = common_suffix_length(&removed_characters, &added_characters, prefix_length);
+    let runs = common_runs(&removed_characters, &added_characters);
 
     (
         format!(
             "-{}",
-            shorten(
+            render_line(
                 &removed_characters,
-                prefix_length,
-                suffix_length,
+                &added_characters,
+                &runs,
+                true,
                 context_characters
             )
         ),
         format!(
             "+{}",
-            shorten(
+            render_line(
                 &added_characters,
-                prefix_length,
-                suffix_length,
+                &removed_characters,
+                &runs,
+                false,
                 context_characters
             )
         ),
@@ -113,6 +241,49 @@ mod tests {
 
     fn focus(output: &str) -> String {
         trim_context(output, DEFAULT_CONTEXT_CHARACTERS)
+    }
+
+    #[test]
+    fn omits_long_context_between_multiple_changes() {
+        let middle = "m".repeat(40);
+        let input = format!(
+            "-aaaaaaaaaaaaaaaaaaaaXX{middle}Y{middle}ZZbbbbbbbbbbbbbbbbbbbb\n+aaaaaaaaaaaaaaaaaaaaxx{middle}y{middle}zzbbbbbbbbbbbbbbbbbbbb\n"
+        );
+        let result = trim_context(&input, 5);
+        assert_eq!(
+            result,
+            "-…aaaaaXXmmmmm…mmmmmYmmmmm…mmmmmZZbbbbb…\n+…aaaaaxxmmmmm…mmmmmymmmmm…mmmmmzzbbbbb…\n"
+        );
+    }
+
+    #[test]
+    fn keeps_short_context_between_multiple_changes() {
+        let result = focus("-aXbbbbbbbbbYccc\n+aPbbbbbbbbbQccc\n");
+        assert_eq!(result, "-aXbbbbbbbbbYccc\n+aPbbbbbbbbbQccc\n");
+    }
+
+    #[test]
+    fn handles_the_multiple_change_prose_example() {
+        let removed = "-… technical work  and review PRs, perform QA and unblock engineers.  I designed the fulfillment system and lab partner API for quip's first custom oral appliance, and I kept reliability visible with Datadog metrics and alerts so the team hears about problems early.  I use Claude Code every day, and have built MCP servers with access control and privacy in mind  and I'd like t…";
+        let added = "+… technical work: I   review PRs, perform QA and unblock engineers.  I designed the fulfillment system and lab partner API for quip's first custom oral appliance, and I kept reliability visible with Datadog metrics and alerts so the team hears about problems early.  I use Claude Code every day  and have built MCP servers with access control and privacy in mind, and I'd like t…";
+        let result = focus(&format!("{removed}\n{added}\n"));
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].len() < removed.len() / 2, "{result}");
+        assert!(lines[0].contains("technical work  and review"), "{result}");
+        assert!(lines[1].contains("technical work: I   review"), "{result}");
+        assert!(lines[0].contains("every day, and have built"), "{result}");
+        assert!(lines[1].contains("every day  and have built"), "{result}");
+        assert!(lines[0].contains("in mind  and I"), "{result}");
+        assert!(lines[1].contains("in mind, and I"), "{result}");
+    }
+
+    #[test]
+    fn falls_back_to_one_changed_region_for_enormous_lines() {
+        let long_text = "a".repeat(3000);
+        let input = format!("-{long_text}X{long_text}\n+{long_text}Y{long_text}\n");
+        let result = trim_context(&input, 5);
+        assert_eq!(result, "-…aaaaaXaaaaa…\n+…aaaaaYaaaaa…\n");
     }
 
     #[test]
